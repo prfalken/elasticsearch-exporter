@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-''' Copyright (c) 2013 Jean Baptiste Favre.
-    Sample script for Zabbix integration with Elasticsearch.
-'''
 import string
 import optparse
 import socket
@@ -246,7 +243,7 @@ class ElasticsearchServer():
         'thread_pool.suggest.largest': Gauge('elasticsearch_thread_pool_suggest_largest', ''),
     }
 
-    def init_probe(self):
+    def __init__(self):
         if self.options.host == 'localhost':
             self.options.host = socket.getfqdn()
         self.hostname = self.options.host
@@ -400,6 +397,5 @@ if __name__ == '__main__':
     while True:
         es = ElasticsearchServer()
         es.parse_args()
-        es.init_probe()
         es.get_metrics()
         time.sleep(1)
