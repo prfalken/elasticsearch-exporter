@@ -244,6 +244,7 @@ class ElasticsearchServer():
     }
 
     def __init__(self):
+        self.parse_args()
         if self.options.host == 'localhost':
             self.options.host = socket.getfqdn()
         self.hostname = self.options.host
@@ -396,6 +397,5 @@ if __name__ == '__main__':
     logging.info('Server started on port %s', port)
     while True:
         es = ElasticsearchServer()
-        es.parse_args()
         es.get_metrics()
         time.sleep(1)
