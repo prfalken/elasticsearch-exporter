@@ -249,8 +249,8 @@ class ElasticsearchServer():
         'thread_pool.suggest.largest': Gauge('elasticsearch_thread_pool_suggest_largest', ''),
     }
 
-    def __init__(self):
-        self.parse_args()
+    def __init__(self, options):
+        self.options = options
         if self.options.host == 'localhost':
             self.options.host = socket.getfqdn()
         self.hostname = self.options.host
@@ -265,19 +265,6 @@ class ElasticsearchServer():
         if self.es_version >= [1, 7, 0]:
             self.cluster_metrics.update(self.ES_CLUSTER_HEALTH_17)
             self.nodes_stats_metrics.update(self.ES_NODES_STATS_17)
-
-    def parse_args(self):
-        parser = optparse.OptionParser()
-        es_options = optparse.OptionGroup(parser, "Elasticsearch Configuration")
-        es_options.add_option("-H", "--host", default="localhost",
-                              help="Elasticsearch server hostname")
-        es_options.add_option("-P", "--port", default=9200,
-                              help="Elasticsearch server port")
-        es_options.add_option("-v", "--verbose", action="store_true")
-        es_options.add_option("-r", "--refresh", default="10", help="get a new measure every N seconds")
-        parser.add_option_group(es_options)
-        (options, args) = parser.parse_args()
-        self.options = options
 
     def _do_get_rawdata(self,url):
         address = 'http://' + self.hostname + ':' + str(self.options.port) + url
@@ -368,9 +355,29 @@ class ElasticsearchServer():
 
 
 if __name__ == '__main__':
+    parser = optparse.OptionParser()
+    es_options = optparse.OptionGroup(parser, "Elasticsearch Configuration")
+    es_options.add_option("-H", "--host", default="localhost",
+                          help="Elasticsearch server hostname")
+    es_options.add_option("-P", "--port", default=9200,
+                          help="Elasticsearch server port")
+    es_options.add_option("-v", "--verbose", action="store_true")
+    es_options.add_option("-r", "--refresh", default="10", help="get a new measure every N seconds")
+    es_options.add_option("-l", "--logging", default="INFO", help="logging level")
+    parser.add_option_group(es_options)
+    (options, args) = parser.parse_args()
+
+    level = logging.INFO
+    if options.logging == "ERROR":
+        level=logging.ERROR
+    if options.logging == "WARNING":
+        level=logging.WARNING
+    if options.logging == "DEBUG":
+        level=logging.DEBUG
+
     logging.basicConfig(
         format='[%(asctime)s] %(name)s.%(levelname)s %(threadName)s %(message)s',
-        level=logging.DEBUG
+        level=level
     )
     logging.captureWarnings(True)
 
@@ -381,9 +388,9 @@ if __name__ == '__main__':
     logging.info('Server started on port %s', port)
     while True:
         try:
-            es = ElasticsearchServer()
+            es = ElasticsearchServer(options)
             es.get_metrics()
         except:
             pass
 
-        time.sleep(int(es.options.refresh))
+        time.sleep(int(options.refresh))
