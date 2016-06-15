@@ -17,6 +17,11 @@ class ElasticsearchServer():
       False: 0,
       True: 1
     }
+
+    ES_IS_MASTER = {
+        'elasticsearch_cluster_is_master': Gauge('elasticsearch_cluster_is_master', '')
+    }
+
     ES_CLUSTER_HEALTH_10 = {
         'active_primary_shards': Gauge('elasticsearch_cluster_health_active_primary_shards', ''),
         'active_shards': Gauge('elasticsearch_cluster_health_active_shards', ''),
@@ -27,6 +32,7 @@ class ElasticsearchServer():
         'status': Gauge('elasticsearch_cluster_health_status', ''),
         'timed_out': Gauge('elasticsearch_cluster_health_timed_out', ''),
         'unassigned_shards': Gauge('elasticsearch_cluster_health_unassigned_shards', ''),
+
     }
     ES_CLUSTER_HEALTH_16 = {
         'number_of_in_flight_fetch': Gauge('elasticsearch_cluster_health_number_of_in_flight_fetch', ''),
@@ -268,20 +274,21 @@ class ElasticsearchServer():
         es_options.add_option("-P", "--port", default=9200,
                               help="Elasticsearch server port")
         es_options.add_option("-v", "--verbose", action="store_true")
+        es_options.add_option("-r", "--refresh", default="10", help="get a new measure every N seconds")
         parser.add_option_group(es_options)
         (options, args) = parser.parse_args()
         self.options = options
-        self.args = args
 
     def _do_get_rawdata(self,url):
+        address = 'http://' + self.hostname + ':' + str(self.options.port) + url
         try:
             resp = requests.get(
-                'http://' + self.hostname + ':' + str(self.options.port) + url,
+                address,
                 timeout=1
             )
             resp.raise_for_status()
-        except Exception as e:
-            logging.error('Step 2 - failed to open: ' + url)
+        except:
+            logging.error('Failed to open: ' + address)
             raise
         return resp
 
@@ -298,7 +305,7 @@ class ElasticsearchServer():
                 value = self.ES_CLUSTER_MAPPING[value]
             data[real_key] = value
         else:
-            self.logger.warning('Could not find key ' + path)
+            logging.warning('Could not find key ' + path)
         return data
 
     def _get_es_version(self, url):
@@ -309,28 +316,6 @@ class ElasticsearchServer():
             raw_data = raw_data.json
         self.es_version = map(int, raw_data['version']['number'].split('.')[0:3])
 
-    def _cluster_pending_tasks(self,url):
-        key = 'elasticsearch.cluster.pending_tasks.{0}'
-        raw_data = self._do_get_rawdata(url)
-        try:
-            raw_data = raw_data.json()
-        except TypeError:
-            raw_data = raw_data.json
-        # Process tasks list
-        pending_tasks = {
-            'urgent': 0,
-            'high': 0
-        }
-        for task in raw_data.get('tasks', []):
-            if task:
-                pending_tasks[task.get('priority')] += 1
-        data = {
-            'elasticsearch.cluster.pending_tasks.total': sum(pending_tasks.values()),
-            'elasticsearch.cluster.pending_tasks.urgent': pending_tasks['urgent'],
-            'elasticsearch.cluster.pending_tasks.high': pending_tasks['high']
-        }
-        return data
-
     def _cluster_health(self, url):
         data = {}
         raw_data = self._do_get_rawdata(url)
@@ -338,7 +323,6 @@ class ElasticsearchServer():
             raw_data = raw_data.json()
         except TypeError:
             raw_data = raw_data.json
-        self.cluster_name = raw_data['cluster_name']
         # Process metrics list
         for path, metric in self.cluster_metrics.items():
             for k,v in self._process_path(path, raw_data).items():
@@ -366,7 +350,7 @@ class ElasticsearchServer():
                     try:
                         metric.set(v)
                     except:
-                        logging.error("Could not parse value %s for metric %s" % (v, k))
+                        logging.warning("Could not parse value %s for metric %s" % (v, k))
 
     def _master_status(self, url):
         data = {}
@@ -374,12 +358,12 @@ class ElasticsearchServer():
         whois_master = self._do_get_rawdata(url)
         whois_master = whois_master.text.split(' ')
         self.is_cluster_master = True if whois_master[3] == self.hostname else False
-        metric = 'elasticsearch_cluster_is_master'
-        g.set(self.ES_CLUSTER_MAPPING[self.is_cluster_master])
+        metric = self.ES_IS_MASTER['elasticsearch_cluster_is_master']
+        metric.set(self.ES_CLUSTER_MAPPING[self.is_cluster_master])
 
     def get_metrics(self):
         self._cluster_health('/_cluster/health/')
-        # self._master_status('/_cat/master/')
+        self._master_status('/_cat/master/')
         self._nodes_stats('/_nodes/_local/stats/')
 
 
@@ -396,6 +380,10 @@ if __name__ == '__main__':
     start_http_server(port)
     logging.info('Server started on port %s', port)
     while True:
-        es = ElasticsearchServer()
-        es.get_metrics()
-        time.sleep(1)
+        try:
+            es = ElasticsearchServer()
+            es.get_metrics()
+        except:
+            pass
+
+        time.sleep(int(es.options.refresh))
